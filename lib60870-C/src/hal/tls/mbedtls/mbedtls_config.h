@@ -7,7 +7,6 @@
 #define MBEDTLS_HAVE_TIME_DATE
 #define MBEDTLS_NO_UDBL_DIVISION
 #define MBEDTLS_PLATFORM_C
-#define MBEDTLS_DEBUG_C
 
 /* mbed TLS feature support */
 #define MBEDTLS_CIPHER_MODE_CBC
