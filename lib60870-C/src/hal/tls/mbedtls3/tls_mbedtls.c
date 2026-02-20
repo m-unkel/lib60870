@@ -39,12 +39,22 @@
 #endif
 
 #if (CONFIG_DEBUG_TLS == 1)
-#define DEBUG_PRINT(appId, fmt, ...) fprintf(stderr, "%s: " fmt, appId, ## __VA_ARGS__)
+#define DEBUG_PRINT(appId, fmt, ...)                                                                                   \
+if(debugHandler != NULL) {                                                                                             \
+    int __size = snprintf(NULL, 0, fmt, ## __VA_ARGS__);                                                                \
+    char *__debug_buf = malloc(__size + 1);                                                                            \
+    if (__debug_buf) {                                                                                                 \
+        snprintf(__debug_buf, __size + 1, fmt, ## __VA_ARGS__);                                                         \
+        debugHandler(NULL, 0, NULL, 0, __debug_buf);                                                                   \
+        free(__debug_buf);                                                                                             \
+    }                                                                                                                  \
+}
 #else
 #define DEBUG_PRINT(fmt, ...) do {} while(0)
 #endif
 
 static int psaInitCounter = 0;
+static void(*debugHandler)(void *, int, const char *, int, const char *);
 
 typedef struct TLSCacheEntry
 {
@@ -94,6 +104,7 @@ struct sTLSConfiguration
     bool chainValidation;
     bool allowOnlyKnownCertificates;
     bool timeValidation;
+    char* hostname;
 
     /* TLS session renegotiation interval in milliseconds */
     int renegotiationTimeInMs;
@@ -842,6 +853,7 @@ TLSConfiguration_create()
 
         /* default behaviour is to check for valid-from and expiration times */
         self->timeValidation = true;
+        self->hostname = NULL;
         self->setupComplete = false;
 
         self->eventHandler = NULL;
@@ -1149,6 +1161,33 @@ TLSConfiguration_setRenegotiationTimeout(TLSConfiguration self, int timeoutInMs)
     /* not supported */
 }
 
+bool
+TLSConfiguration_setHostnameVerification(TLSConfiguration self, const char* hostname)
+{
+    if (self) {
+        if (self->hostname)
+        {
+            GLOBAL_FREEMEM(self->hostname);
+            self->hostname = NULL;
+        }
+        if (hostname) {
+            self->hostname = strdup(hostname);
+        }
+        return true;
+    }
+    return false;
+}
+
+void
+TLSConfiguration_setDebugHandler(TLSConfiguration self, void (*handler)(void *, int, const char *, int, const char *))
+{
+    debugHandler = handler;
+    if (self) {
+        mbedtls_ssl_conf_dbg(&(self->conf), debugHandler, NULL);
+        mbedtls_debug_set_threshold((handler==NULL) ? 0 : 1);
+    }
+}
+
 void
 TLSConfiguration_destroy(TLSConfiguration self)
 {
@@ -1192,6 +1231,11 @@ TLSConfiguration_destroy(TLSConfiguration self)
         LinkedList_destroy(self->allowedCertificates);
 
         GLOBAL_FREEMEM(self->ciphersuites);
+
+        if (self->hostname)
+        {
+            GLOBAL_FREEMEM(self->hostname);
+        }
 
         psaInitCounter--;
 
@@ -1313,6 +1357,10 @@ createSecurityEvents(TLSConfiguration config, int ret, uint32_t flags, TLSSocket
         {
             raiseSecurityEvent(config, TLS_SEC_EVT_INCIDENT, TLS_EVENT_CODE_ALM_CERT_REVOKED,
                                "Alarm: revoked certificate", socket);
+        }
+        else if (flags & MBEDTLS_X509_BADCERT_CN_MISMATCH) {
+            raiseSecurityEvent(config, TLS_SEC_EVT_INCIDENT, TLS_EVENT_CODE_ALM_CERT_CN_MISMATCH,
+                               "Alarm: Certificate validation: Certificate Common Name (CN) does not match with the expected hostname", socket);
         }
         else if (flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED)
         {
@@ -1555,8 +1603,8 @@ TLSSocket_create(Socket socket, TLSConfiguration configuration, bool storeClient
             }
         }
 
-        /* disable host name verification */
-        mbedtls_ssl_set_hostname(&(self->ssl), NULL);
+        /* set host name verification */
+        mbedtls_ssl_set_hostname(&(self->ssl), configuration->hostname);
 
         while ((ret = mbedtls_ssl_handshake(&(self->ssl))) != 0)
         {

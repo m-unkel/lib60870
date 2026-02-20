@@ -104,6 +104,7 @@ typedef enum {
 #define TLS_EVENT_CODE_ALM_RENEGOTIATION_TIMEOUT 26
 #define TLS_EVENT_CODE_INF_SESSION_RESUMED 27
 #define TLS_EVENT_CODE_INF_SESSION_EXPIRED 28
+#define TLS_EVENT_CODE_ALM_CERT_CN_MISMATCH 31
 
 typedef struct sTLSConnection* TLSConnection;
 
@@ -302,6 +303,16 @@ PAL_API void
 TLSConfiguration_setRenegotiationTimeout(TLSConfiguration self, int timeoutInMs);
 
 /**
+ * \brief Set the hostname that must match the CN field of the peers certificate.
+ *
+ * The peers certificate will be validated against this hostname.
+ *
+ * \param hostname string or NULL to disable hostname verification
+ */
+PAL_API bool
+TLSConfiguration_setHostnameVerification(TLSConfiguration self, const char* hostname);
+
+/**
  * \brief Set minimal allowed TLS version to use
  */
 PAL_API void
@@ -362,6 +373,16 @@ TLSConfiguration_addCipherSuite(TLSConfiguration self, int ciphersuite);
  */
 PAL_API void
 TLSConfiguration_clearCipherSuiteList(TLSConfiguration self);
+
+/**
+ * \brief Set a debug handler to forward SSL connection issues.
+ *
+ * Get insights on connection issues by forwarding mbedtls debug messages to application logic.
+ *
+ * \param handler debug event handler or NULL to disable debug logging
+ */
+PAL_API void
+TLSConfiguration_setDebugHandler(TLSConfiguration self, void (*handler)(void *, int, const char *, int, const char *));
 
 /**
  * Release all resource allocated by the TLSConfiguration instance
